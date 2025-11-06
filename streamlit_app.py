@@ -118,16 +118,28 @@ acq = AcquisitionCosts(
 
 # =============== RUN ===============
 if run_button:
-    mc = run_mc_with_paths(
-        prop,
-        mort,
-        refi,
-        inv,
-        sim,
-        acq,
-        sdlt,
-        corporate_tax_rate=corp_tax,  # pass tax rate through
-    )
+    try:
+        mc = run_mc_with_paths(
+            prop,
+            mort,
+            refi,
+            inv,
+            sim,
+            acq,
+            sdlt,
+            corporate_tax_rate=corp_tax,
+        )
+    except TypeError:
+        mc = run_mc_with_paths(
+            prop,
+            mort,
+            refi,
+            inv,
+            sim,
+            acq,
+            sdlt,
+        )
+
     final_portfolio = mc["finals"]
     equity_paths = mc["equity_paths"]
     inv_paths = mc["inv_paths"]
@@ -143,9 +155,7 @@ if run_button:
     final_equity = equity_paths[:, -1]
     final_invest = inv_paths[:, -1]
 
-    # summaries
     stats_total = summarize(final_portfolio)
-    stats_total_pv = summarize(final_portfolio_pv)
 
     mean_total = final_portfolio.mean()
     mean_equity = final_equity.mean()
@@ -161,7 +171,7 @@ if run_button:
     # =============== LAYOUT FOR PLOTS ===============
     col_left, col_right = st.columns(2)
 
-    # ----- left: average paths -----
+    # left: average paths
     with col_left:
         n_steps = years * steps_per_year
         t = np.arange(n_steps) / steps_per_year
@@ -179,7 +189,7 @@ if run_button:
         ax1.legend()
         st.pyplot(fig1)
 
-    # ----- right: ending portfolio histogram -----
+    # right: ending portfolio histogram
     with col_right:
         bins = int(np.sqrt(n_paths))
         fig2, ax2 = plt.subplots(figsize=(6, 3.5))
@@ -195,7 +205,7 @@ if run_button:
     # second row
     col_left2, col_right2 = st.columns(2)
 
-    # ----- left2: PV multiple with investment-only overlay -----
+    # left2: PV multiple
     with col_left2:
         total_multiples = final_portfolio_pv / initial_outlay
         invest_pv = final_invest / df
@@ -213,7 +223,7 @@ if run_button:
         ax3.legend()
         st.pyplot(fig3)
 
-    # ----- right2: discount view / ECDF of PV -----
+    # right2: ECDF
     with col_right2:
         sorted_pv = np.sort(final_portfolio_pv)
         ecdf_y = np.arange(1, len(sorted_pv) + 1) / len(sorted_pv)
