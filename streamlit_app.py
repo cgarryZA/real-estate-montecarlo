@@ -25,23 +25,30 @@ st.markdown(
 # ------------------------------------------------------------
 # helpers
 # ------------------------------------------------------------
-def sharpe_from_path(levels: np.ndarray, steps_per_year: int, risk_free: float = 0.03) -> float:
+def sharpe_from_paths(paths: np.ndarray, steps_per_year: int, risk_free: float = 0.03) -> float:
     """
-    levels: 1D array of portfolio values over time (e.g. mean path)
-    returns annualised Sharpe ratio
+    paths: (n_paths, n_steps) of portfolio levels
+    compute Sharpe per path then average
     """
-    rets = levels[1:] / levels[:-1] - 1.0
-    # in case of flat start
-    if rets.size == 0 or not np.all(np.isfinite(rets)):
+    n_paths, n_steps = paths.shape
+    if n_steps < 2:
         return 0.0
 
-    mean_step = np.mean(rets)
-    std_step = np.std(rets, ddof=1)
+    step_rets = paths[:, 1:] / paths[:, :-1] - 1.0  # (n_paths, n_steps-1)
+    # annualise per path
+    mean_step = step_rets.mean(axis=1)
+    std_step = step_rets.std(axis=1, ddof=1)
+
     ann_ret = (1 + mean_step) ** steps_per_year - 1
     ann_vol = std_step * np.sqrt(steps_per_year)
-    if ann_vol <= 0:
-        return 0.0
-    return (ann_ret - risk_free) / ann_vol
+
+    excess = ann_ret - risk_free
+    sharpe_per_path = np.zeros_like(excess)
+    mask = ann_vol > 0
+    sharpe_per_path[mask] = excess[mask] / ann_vol[mask]
+
+    # return average sharpe across sims (could also use median)
+    return float(np.mean(sharpe_per_path))
 
 
 def mc_invest_initial_outlay(
@@ -227,8 +234,6 @@ if run_button:
     # averaged paths for main strategy
     n_steps = years * steps_per_year
     t = np.arange(n_steps) / steps_per_year
-    equity_mean_path = equity_paths.mean(axis=0)
-    inv_mean_path = inv_paths.mean(axis=0)
     portfolio_mean_path = portfolio_paths.mean(axis=0)
 
     # ------------------------------------------------------------------
@@ -243,12 +248,12 @@ if run_button:
         n_paths=n_paths,
     )
 
-    # risk free curve
+    # risk free curve (deterministic)
     risk_free_curve = initial_outlay * (1 + rf_rate) ** t
 
-    # Sharpe for both (from their mean paths)
-    portfolio_sharpe = sharpe_from_path(portfolio_mean_path, steps_per_year, rf_rate)
-    benchmark_sharpe = sharpe_from_path(bench_mean_path, steps_per_year, rf_rate)
+    # Sharpe for both using per-path method
+    strategy_sharpe = sharpe_from_paths(portfolio_paths, steps_per_year, rf_rate)
+    benchmark_sharpe = sharpe_from_paths(bench_paths, steps_per_year, rf_rate)
 
     # top metrics
     mean_total = final_portfolio.mean()
@@ -263,7 +268,7 @@ if run_button:
     m4.metric("Initial outlay", f"£{initial_outlay:,.0f}")
     m5.metric(
         "Sharpe (strategy vs bench)",
-        f"Strat {portfolio_sharpe:.2f}  |  Bench {benchmark_sharpe:.2f}",
+        f"Strat {strategy_sharpe:.2f}  |  Bench {benchmark_sharpe:.2f}",
     )
 
     # =============== LAYOUT FOR PLOTS ===============
@@ -272,7 +277,7 @@ if run_button:
     # left: average paths + benchmark + risk free
     with col_left:
         fig1, ax1 = plt.subplots(figsize=(6, 3.5))
-        ax1.plot(t, portfolio_mean_path, label=f"Strategy mean (Sharpe {portfolio_sharpe:.2f})", linewidth=2)
+        ax1.plot(t, portfolio_mean_path, label=f"Strategy mean (Sharpe {strategy_sharpe:.2f})", linewidth=2)
         ax1.plot(t, bench_mean_path, label=f"Invest initial (Sharpe {benchmark_sharpe:.2f})", linestyle="--")
         ax1.plot(t, risk_free_curve, label=f"Risk free {rf_rate*100:.1f}% p.a.", linestyle=":")
         ax1.set_xlabel("Years")
