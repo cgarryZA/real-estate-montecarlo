@@ -18,12 +18,10 @@ st.set_page_config(page_title="Leveraged Property Monte Carlo", layout="wide")
 
 st.title("Leveraged Property Investment Simulator")
 st.markdown(
-    "Play with purchase price, LTV, growth, and refinance rules to see portfolio value distributions and average equity and investment paths."
+    "Adjust the parameters in the sidebar and simulate how a leveraged property and reinvestment strategy performs over time."
 )
 
-# -------------------------
-# SIDEBAR INPUTS
-# -------------------------
+# =============== SIDEBAR =================
 st.sidebar.header("Property & Rent")
 price = st.sidebar.number_input("Purchase price (£)", 50_000, 2_000_000, 295_000, 5_000)
 price_drift = st.sidebar.slider("Property drift (annual %)", 0.0, 0.08, 0.03, 0.005)
@@ -62,9 +60,7 @@ sdlt_surcharge = st.sidebar.number_input("SDLT surcharge", 0.0, 0.05, 0.03, 0.00
 
 run_button = st.sidebar.button("Run simulation")
 
-# -------------------------
-# BUILD PARAM OBJECTS
-# -------------------------
+# =============== BUILD PARAM OBJECTS ===============
 prop = PropertyParams(
     initial_price=price,
     price_drift=price_drift,
@@ -116,65 +112,110 @@ acq = AcquisitionCosts(
     mortgage_fee_pct_of_loan=mortgage_fee_pct,
 )
 
+# =============== RUN ===============
 if run_button:
     mc = run_mc_with_paths(prop, mort, refi, inv, sim, acq, sdlt)
-    finals = mc["finals"]
+    final_portfolio = mc["finals"]
     equity_paths = mc["equity_paths"]
     inv_paths = mc["inv_paths"]
-    portfolio_paths = mc["portfolio_paths"]  # <-- this was wealth_paths before
+    portfolio_paths = mc["portfolio_paths"]
 
     initial_outlay = compute_initial_outlay(prop, mort, acq, sdlt)
 
-    # discount to PV
+    # discount to PV for comparison
     df = (1 + 0.03) ** years
-    finals_pv = finals / df
+    final_portfolio_pv = final_portfolio / df
 
-    stats = summarize(finals)
-    stats_pv = summarize(finals_pv)
+    # component finals
+    final_equity = equity_paths[:, -1]
+    final_invest = inv_paths[:, -1]
 
-    st.subheader("Summary statistics")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.json(stats)
-    with col2:
-        st.json(stats_pv)
+    # summaries
+    stats_total = summarize(final_portfolio)
+    stats_total_pv = summarize(final_portfolio_pv)
 
-    # average paths
-    n_steps = years * steps_per_year
-    t = np.arange(n_steps) / steps_per_year
-    equity_mean = equity_paths.mean(axis=0)
-    inv_mean = inv_paths.mean(axis=0)
-    portfolio_mean = portfolio_paths.mean(axis=0)  # <-- updated name
+    mean_total = final_portfolio.mean()
+    mean_equity = final_equity.mean()
+    mean_invest = final_invest.mean()
 
-    fig1, ax1 = plt.subplots(figsize=(7, 4))
-    ax1.plot(t, equity_mean, label="Mean equity")
-    ax1.plot(t, inv_mean, label="Mean investment")
-    ax1.plot(t, portfolio_mean, label="Mean portfolio value", linestyle="--", alpha=0.7)
-    ax1.set_xlabel("Years")
-    ax1.set_ylabel("£")
-    ax1.set_title("Average path across simulations")
-    ax1.legend()
-    st.pyplot(fig1)
+    st.subheader("Summary")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Mean ending portfolio", f"£{mean_total:,.0f}")
+    m2.metric("Mean equity component", f"£{mean_equity:,.0f}")
+    m3.metric("Mean investment component", f"£{mean_invest:,.0f}")
+    m4.metric("Initial outlay", f"£{initial_outlay:,.0f}")
 
-    # hist raw
-    bins = int(np.sqrt(n_paths))
-    fig2, ax2 = plt.subplots(figsize=(6, 4))
-    ax2.hist(finals, bins=bins, edgecolor="black")
-    ax2.axvline(stats["mean"], color="red", linestyle="--", label=f"Mean £{stats['mean']:.0f}")
-    ax2.axvline(initial_outlay, color="blue", linestyle="-", label=f"Initial outlay £{initial_outlay:.0f}")
-    ax2.set_title("Ending portfolio value")
-    ax2.legend()
-    st.pyplot(fig2)
+    # =============== LAYOUT FOR PLOTS ===============
+    col_left, col_right = st.columns(2)
 
-    # multiples
-    multiples = finals_pv / initial_outlay
-    fig3, ax3 = plt.subplots(figsize=(6, 4))
-    ax3.hist(multiples, bins=bins, edgecolor="black", color="lightgreen")
-    ax3.axvline(1.0, color="blue", linestyle="-", label="1.0× initial cash")
-    ax3.axvline(np.median(multiples), color="green", linestyle="--", label=f"Median {np.median(multiples):.2f}×")
-    ax3.set_title("PV multiple of initial outlay")
-    ax3.legend()
-    st.pyplot(fig3)
+    # ----- left: average paths -----
+    with col_left:
+        n_steps = years * steps_per_year
+        t = np.arange(n_steps) / steps_per_year
+        equity_mean_path = equity_paths.mean(axis=0)
+        inv_mean_path = inv_paths.mean(axis=0)
+        portfolio_mean_path = portfolio_paths.mean(axis=0)
+
+        fig1, ax1 = plt.subplots(figsize=(6, 3.5))
+        ax1.plot(t, equity_mean_path, label="Mean equity")
+        ax1.plot(t, inv_mean_path, label="Mean investment")
+        ax1.plot(t, portfolio_mean_path, label="Mean portfolio", linestyle="--", alpha=0.7)
+        ax1.set_xlabel("Years")
+        ax1.set_ylabel("£")
+        ax1.set_title("Average path of portfolio components")
+        ax1.legend()
+        st.pyplot(fig1)
+
+    # ----- right: ending portfolio histogram -----
+    with col_right:
+        bins = int(np.sqrt(n_paths))
+        fig2, ax2 = plt.subplots(figsize=(6, 3.5))
+        ax2.hist(final_portfolio, bins=bins, edgecolor="black", alpha=0.8)
+        ax2.axvline(stats_total["mean"], color="red", linestyle="--", label=f"Mean £{stats_total['mean']:.0f}")
+        ax2.axvline(initial_outlay, color="blue", linestyle="-", label=f"Initial outlay £{initial_outlay:.0f}")
+        ax2.set_title("Ending portfolio value")
+        ax2.set_xlabel("£")
+        ax2.set_ylabel("Frequency")
+        ax2.legend()
+        st.pyplot(fig2)
+
+    # second row
+    col_left2, col_right2 = st.columns(2)
+
+    # ----- left2: PV multiple with investment-only overlay -----
+    with col_left2:
+        # total PV multiple
+        total_multiples = final_portfolio_pv / initial_outlay
+        # investment-only PV multiple (what the investment account achieved on its own cash)
+        invest_pv = final_invest / df
+        invest_multiples = invest_pv / initial_outlay
+
+        bins_mult = int(np.sqrt(n_paths))
+        fig3, ax3 = plt.subplots(figsize=(6, 3.5))
+        # investment only first (lighter) then total on top
+        ax3.hist(invest_multiples, bins=bins_mult, edgecolor="black", alpha=0.4, label="Investment account PV multiple")
+        ax3.hist(total_multiples, bins=bins_mult, edgecolor="black", alpha=0.6, label="Total PV multiple")
+
+        ax3.axvline(1.0, color="blue", linestyle="-", label="1.0× initial cash")
+        ax3.axvline(np.median(total_multiples), color="green", linestyle="--", label=f"Total median {np.median(total_multiples):.2f}×")
+        ax3.set_title("PV multiples (total vs investment only)")
+        ax3.set_xlabel("Multiple of initial outlay (×)")
+        ax3.set_ylabel("Frequency")
+        ax3.legend()
+        st.pyplot(fig3)
+
+    # ----- right2: discount view / ECDF of PV -----
+    with col_right2:
+        sorted_pv = np.sort(final_portfolio_pv)
+        ecdf_y = np.arange(1, len(sorted_pv) + 1) / len(sorted_pv)
+        fig4, ax4 = plt.subplots(figsize=(6, 3.5))
+        ax4.plot(sorted_pv, ecdf_y, drawstyle="steps-post", label="ECDF of PV")
+        ax4.axvline(initial_outlay, color="blue", linestyle="-", label="Initial outlay")
+        ax4.set_title("ECDF of PV of ending portfolio value")
+        ax4.set_xlabel("£ (present value)")
+        ax4.set_ylabel("Cumulative probability")
+        ax4.legend()
+        st.pyplot(fig4)
 
 else:
     st.info("Set your parameters in the sidebar and click **Run simulation**.")
