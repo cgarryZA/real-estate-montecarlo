@@ -169,15 +169,24 @@ if run_button:
     stats_total = summarize(final_portfolio)
 
     # ------------------------------------------------
-    # CAGR based Sharpe
+    # Sharpe from the mean portfolio path
     # ------------------------------------------------
-    # each path has an ending value -> turn into CAGR
-    cagr_paths = (final_portfolio / initial_outlay) ** (1.0 / years) - 1.0
-    mean_cagr = float(np.mean(cagr_paths))
-    std_cagr = float(np.std(cagr_paths))
-    rf = 0.03  # or whatever you want
-    if std_cagr > 0:
-        sharpe = (mean_cagr - rf) / std_cagr
+    # we already have all portfolio paths -> average them -> get a single time series
+    n_steps = years * steps_per_year
+    t = np.arange(n_steps) / steps_per_year
+    equity_mean_path = equity_paths.mean(axis=0)
+    inv_mean_path = inv_paths.mean(axis=0)
+    portfolio_mean_path = portfolio_paths.mean(axis=0)
+
+    step_returns = portfolio_mean_path[1:] / portfolio_mean_path[:-1] - 1.0
+    # guard in case portfolio_mean_path is flat early on
+    if step_returns.size > 1 and np.all(np.isfinite(step_returns)):
+        avg_step_ret = np.mean(step_returns)
+        std_step_ret = np.std(step_returns, ddof=1)
+        ann_return = (1 + avg_step_ret) ** steps_per_year - 1
+        ann_vol = std_step_ret * np.sqrt(steps_per_year)
+        rf = 0.03
+        sharpe = (ann_return - rf) / ann_vol if ann_vol > 0 else 0.0
     else:
         sharpe = 0.0
 
@@ -191,19 +200,13 @@ if run_button:
     m2.metric("Mean equity component", f"£{mean_equity:,.0f}")
     m3.metric("Mean investment component", f"£{mean_invest:,.0f}")
     m4.metric("Initial outlay", f"£{initial_outlay:,.0f}")
-    m5.metric("Sharpe (CAGR based)", f"{sharpe:.2f}")
+    m5.metric("Sharpe (from mean path)", f"{sharpe:.2f}")
 
     # =============== LAYOUT FOR PLOTS ===============
     col_left, col_right = st.columns(2)
 
     # left: average paths
     with col_left:
-        n_steps = years * steps_per_year
-        t = np.arange(n_steps) / steps_per_year
-        equity_mean_path = equity_paths.mean(axis=0)
-        inv_mean_path = inv_paths.mean(axis=0)
-        portfolio_mean_path = portfolio_paths.mean(axis=0)
-
         fig1, ax1 = plt.subplots(figsize=(6, 3.5))
         ax1.plot(t, equity_mean_path, label="Mean equity")
         ax1.plot(t, inv_mean_path, label="Mean investment")
@@ -216,7 +219,7 @@ if run_button:
         )
         ax1.set_xlabel("Years")
         ax1.set_ylabel("£")
-        ax1.set_title(f"Average path of portfolio components (Sharpe {sharpe:.2f})")
+        ax1.set_title("Average path of portfolio components")
         ax1.legend()
         st.pyplot(fig1)
 
