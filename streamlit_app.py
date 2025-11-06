@@ -21,6 +21,57 @@ st.markdown(
     "Adjust the parameters in the sidebar and simulate how a leveraged property and reinvestment strategy performs over time."
 )
 
+
+# ------------------------------------------------------------
+# helpers
+# ------------------------------------------------------------
+def sharpe_from_path(levels: np.ndarray, steps_per_year: int, risk_free: float = 0.03) -> float:
+    """
+    levels: 1D array of portfolio values over time (e.g. mean path)
+    returns annualised Sharpe ratio
+    """
+    rets = levels[1:] / levels[:-1] - 1.0
+    # in case of flat start
+    if rets.size == 0 or not np.all(np.isfinite(rets)):
+        return 0.0
+
+    mean_step = np.mean(rets)
+    std_step = np.std(rets, ddof=1)
+    ann_ret = (1 + mean_step) ** steps_per_year - 1
+    ann_vol = std_step * np.sqrt(steps_per_year)
+    if ann_vol <= 0:
+        return 0.0
+    return (ann_ret - risk_free) / ann_vol
+
+
+def mc_invest_initial_outlay(
+    initial_outlay: float,
+    exp_return: float,
+    vol: float,
+    years: int,
+    steps_per_year: int,
+    n_paths: int,
+    seed: int = 999,
+):
+    """
+    Simple GBM for 'just invest the initial cash in the market'
+    returns (paths, mean_path)
+    """
+    rng = np.random.default_rng(seed)
+    dt = 1 / steps_per_year
+    n_steps = years * steps_per_year
+    paths = np.zeros((n_paths, n_steps), dtype=float)
+    for i in range(n_paths):
+        level = initial_outlay
+        for t in range(n_steps):
+            paths[i, t] = level
+            if t < n_steps - 1:
+                z = rng.normal()
+                level *= np.exp((exp_return - 0.5 * vol**2) * dt + vol * np.sqrt(dt) * z)
+    mean_path = paths.mean(axis=0)
+    return paths, mean_path
+
+
 # =============== SIDEBAR =================
 st.sidebar.header("Property & Rent")
 price = st.sidebar.number_input("Purchase price (£)", 50_000, 2_000_000, 295_000, 5_000)
@@ -71,6 +122,10 @@ sdlt_surcharge = st.sidebar.number_input(
 # tax
 st.sidebar.header("Tax")
 corp_tax = st.sidebar.slider("Corporate tax rate", 0.0, 0.35, 0.19, 0.01)
+
+# risk free for comparison
+st.sidebar.header("Comparison")
+rf_rate = st.sidebar.slider("Risk free rate", 0.0, 0.06, 0.03, 0.005)
 
 run_button = st.sidebar.button("Run simulation")
 
@@ -156,6 +211,7 @@ if run_button:
     inv_paths = mc["inv_paths"]
     portfolio_paths = mc["portfolio_paths"]
 
+    # initial cash actually used
     initial_outlay = compute_initial_outlay(prop, mort, acq, sdlt)
 
     # discount to PV for comparison
@@ -168,28 +224,33 @@ if run_button:
 
     stats_total = summarize(final_portfolio)
 
-    # ------------------------------------------------
-    # Sharpe from the mean portfolio path
-    # ------------------------------------------------
-    # we already have all portfolio paths -> average them -> get a single time series
+    # averaged paths for main strategy
     n_steps = years * steps_per_year
     t = np.arange(n_steps) / steps_per_year
     equity_mean_path = equity_paths.mean(axis=0)
     inv_mean_path = inv_paths.mean(axis=0)
     portfolio_mean_path = portfolio_paths.mean(axis=0)
 
-    step_returns = portfolio_mean_path[1:] / portfolio_mean_path[:-1] - 1.0
-    # guard in case portfolio_mean_path is flat early on
-    if step_returns.size > 1 and np.all(np.isfinite(step_returns)):
-        avg_step_ret = np.mean(step_returns)
-        std_step_ret = np.std(step_returns, ddof=1)
-        ann_return = (1 + avg_step_ret) ** steps_per_year - 1
-        ann_vol = std_step_ret * np.sqrt(steps_per_year)
-        rf = 0.03
-        sharpe = (ann_return - rf) / ann_vol if ann_vol > 0 else 0.0
-    else:
-        sharpe = 0.0
+    # ------------------------------------------------------------------
+    # benchmark: invest initial outlay in the market with same µ, σ
+    # ------------------------------------------------------------------
+    bench_paths, bench_mean_path = mc_invest_initial_outlay(
+        initial_outlay,
+        exp_return=inv_return,
+        vol=inv_vol,
+        years=years,
+        steps_per_year=steps_per_year,
+        n_paths=n_paths,
+    )
 
+    # risk free curve
+    risk_free_curve = initial_outlay * (1 + rf_rate) ** t
+
+    # Sharpe for both (from their mean paths)
+    portfolio_sharpe = sharpe_from_path(portfolio_mean_path, steps_per_year, rf_rate)
+    benchmark_sharpe = sharpe_from_path(bench_mean_path, steps_per_year, rf_rate)
+
+    # top metrics
     mean_total = final_portfolio.mean()
     mean_equity = final_equity.mean()
     mean_invest = final_invest.mean()
@@ -200,30 +261,27 @@ if run_button:
     m2.metric("Mean equity component", f"£{mean_equity:,.0f}")
     m3.metric("Mean investment component", f"£{mean_invest:,.0f}")
     m4.metric("Initial outlay", f"£{initial_outlay:,.0f}")
-    m5.metric("Sharpe (from mean path)", f"{sharpe:.2f}")
+    m5.metric(
+        "Sharpe (strategy vs bench)",
+        f"Strat {portfolio_sharpe:.2f}  |  Bench {benchmark_sharpe:.2f}",
+    )
 
     # =============== LAYOUT FOR PLOTS ===============
     col_left, col_right = st.columns(2)
 
-    # left: average paths
+    # left: average paths + benchmark + risk free
     with col_left:
         fig1, ax1 = plt.subplots(figsize=(6, 3.5))
-        ax1.plot(t, equity_mean_path, label="Mean equity")
-        ax1.plot(t, inv_mean_path, label="Mean investment")
-        ax1.plot(
-            t,
-            portfolio_mean_path,
-            label="Mean portfolio",
-            linestyle="--",
-            alpha=0.7,
-        )
+        ax1.plot(t, portfolio_mean_path, label=f"Strategy mean (Sharpe {portfolio_sharpe:.2f})", linewidth=2)
+        ax1.plot(t, bench_mean_path, label=f"Invest initial (Sharpe {benchmark_sharpe:.2f})", linestyle="--")
+        ax1.plot(t, risk_free_curve, label=f"Risk free {rf_rate*100:.1f}% p.a.", linestyle=":")
         ax1.set_xlabel("Years")
         ax1.set_ylabel("£")
-        ax1.set_title("Average path of portfolio components")
+        ax1.set_title("Strategy vs investing initial outlay")
         ax1.legend()
         st.pyplot(fig1)
 
-    # right: ending portfolio histogram
+    # right: ending portfolio histogram (same as before)
     with col_right:
         bins = int(np.sqrt(n_paths))
         fig2, ax2 = plt.subplots(figsize=(6, 3.5))
