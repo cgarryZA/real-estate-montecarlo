@@ -21,6 +21,29 @@ st.markdown(
     "Adjust the parameters in the sidebar and simulate how a leveraged property and reinvestment strategy performs over time."
 )
 
+# =====================================================================
+# helper for annualised return / vol / sharpe from portfolio paths
+# =====================================================================
+def path_stats_from_portfolios(portfolio_paths: np.ndarray, steps_per_year: int, risk_free: float = 0.0):
+    """
+    portfolio_paths: shape (n_paths, n_steps)
+    Converts levels to step returns then annualises and returns arrays.
+    """
+    # returns per step
+    rets = portfolio_paths[:, 1:] / portfolio_paths[:, :-1] - 1.0  # (n_paths, n_steps-1)
+    mean_step = rets.mean(axis=1)
+    std_step = rets.std(axis=1, ddof=1)
+
+    ann_return = (1.0 + mean_step) ** steps_per_year - 1.0
+    ann_vol = std_step * np.sqrt(steps_per_year)
+    excess = ann_return - risk_free
+
+    sharpe = np.zeros_like(excess)
+    nonzero = ann_vol > 0
+    sharpe[nonzero] = excess[nonzero] / ann_vol[nonzero]
+    return ann_return, ann_vol, sharpe
+
+
 # =============== SIDEBAR =================
 st.sidebar.header("Property & Rent")
 price = st.sidebar.number_input("Purchase price (£)", 50_000, 2_000_000, 295_000, 5_000)
@@ -58,9 +81,12 @@ solicitor_pct = st.sidebar.number_input("Solicitor (% of price)", 0.0, 0.02, 0.0
 mortgage_fee_pct = st.sidebar.number_input("Mortgage fee (% of loan)", 0.0, 0.02, 0.005, 0.0005)
 sdlt_surcharge = st.sidebar.number_input("SDLT surcharge", 0.0, 0.05, 0.03, 0.001)
 
-# NEW: tax
+# tax
 st.sidebar.header("Tax")
 corp_tax = st.sidebar.slider("Corporate tax rate", 0.0, 0.35, 0.19, 0.01)
+
+# optimisation toggle
+show_opt = st.sidebar.checkbox("Show LTV risk return sweep", value=False)
 
 run_button = st.sidebar.button("Run simulation")
 
@@ -118,6 +144,7 @@ acq = AcquisitionCosts(
 
 # =============== RUN ===============
 if run_button:
+    # try new signature first (with tax)
     try:
         mc = run_mc_with_paths(
             prop,
@@ -130,6 +157,7 @@ if run_button:
             corporate_tax_rate=corp_tax,
         )
     except TypeError:
+        # fallback for older simulate.py
         mc = run_mc_with_paths(
             prop,
             mort,
@@ -235,6 +263,92 @@ if run_button:
         ax4.set_ylabel("Cumulative probability")
         ax4.legend()
         st.pyplot(fig4)
+
+    # ============================
+    # OPTIONAL: LTV sweep plot
+    # ============================
+    if show_opt:
+        st.subheader("LTV risk return sweep")
+
+        # take a few LTVs around the chosen one
+        candidate_ltvs = [
+            initial_ltv - 0.1,
+            initial_ltv - 0.05,
+            initial_ltv,
+            initial_ltv + 0.05,
+            initial_ltv + 0.1,
+        ]
+        # keep only valid ones
+        candidate_ltvs = [x for x in candidate_ltvs if 0.5 <= x <= 0.95]
+
+        ann_ret_list = []
+        ann_vol_list = []
+        sharpe_list = []
+
+        for ltv in candidate_ltvs:
+            tmp_mort = MortgageParams(
+                initial_ltv=ltv,
+                rate=mort_rate,
+                term_years=term_years,
+            )
+            # try calling with tax
+            try:
+                tmp_mc = run_mc_with_paths(
+                    prop,
+                    tmp_mort,
+                    refi,
+                    inv,
+                    sim,
+                    acq,
+                    sdlt,
+                    corporate_tax_rate=corp_tax,
+                )
+            except TypeError:
+                tmp_mc = run_mc_with_paths(
+                    prop,
+                    tmp_mort,
+                    refi,
+                    inv,
+                    sim,
+                    acq,
+                    sdlt,
+                )
+
+            tmp_paths = tmp_mc["portfolio_paths"]
+            ann_ret, ann_vol, sharpe = path_stats_from_portfolios(
+                tmp_paths,
+                steps_per_year=steps_per_year,
+                risk_free=0.02,
+            )
+            # average across paths
+            ann_ret_list.append(ann_ret.mean())
+            ann_vol_list.append(ann_vol.mean())
+            sharpe_list.append(sharpe.mean())
+
+        ann_ret_arr = np.array(ann_ret_list)
+        ann_vol_arr = np.array(ann_vol_list)
+        sharpe_arr = np.array(sharpe_list)
+
+        best_idx = np.argmax(sharpe_arr)
+
+        fig5, ax5 = plt.subplots(figsize=(6, 3.5))
+        sc = ax5.scatter(ann_vol_arr, ann_ret_arr, c=sharpe_arr, cmap="viridis", s=80)
+        ax5.scatter(
+            ann_vol_arr[best_idx],
+            ann_ret_arr[best_idx],
+            c="red",
+            s=120,
+            label="Best Sharpe",
+        )
+        for i, ltv in enumerate(candidate_ltvs):
+            ax5.text(ann_vol_arr[i], ann_ret_arr[i], f"{ltv:.2f}", fontsize=8)
+
+        ax5.set_xlabel("Annualised volatility")
+        ax5.set_ylabel("Annualised return")
+        ax5.set_title("Risk return by LTV (colour = Sharpe)")
+        ax5.legend()
+        plt.tight_layout()
+        st.pyplot(fig5)
 
 else:
     st.info("Set your parameters in the sidebar and click **Run simulation**.")
