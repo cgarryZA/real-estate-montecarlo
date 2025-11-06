@@ -17,9 +17,8 @@ from models import (
 st.set_page_config(page_title="Leveraged Property Monte Carlo", layout="wide")
 
 st.title("Leveraged Property Investment Simulator")
-
 st.markdown(
-    "Play with purchase price, LTV, growth, and refinance rules to see portfolio value distributions and average equity/investment paths."
+    "Play with purchase price, LTV, growth, and refinance rules to see portfolio value distributions and average equity and investment paths."
 )
 
 # -------------------------
@@ -100,7 +99,6 @@ sim = SimulationParams(
     n_paths=n_paths,
 )
 
-# simple UK-ish bands
 sdlt = StampDutyParams(
     bands=[
         (0, 250_000, 0.0),
@@ -119,16 +117,15 @@ acq = AcquisitionCosts(
 )
 
 if run_button:
-    # run the big sim
     mc = run_mc_with_paths(prop, mort, refi, inv, sim, acq, sdlt)
     finals = mc["finals"]
     equity_paths = mc["equity_paths"]
     inv_paths = mc["inv_paths"]
-    wealth_paths = mc["wealth_paths"]
+    portfolio_paths = mc["portfolio_paths"]  # <-- this was wealth_paths before
 
     initial_outlay = compute_initial_outlay(prop, mort, acq, sdlt)
 
-    # discount to PV for reporting
+    # discount to PV
     df = (1 + 0.03) ** years
     finals_pv = finals / df
 
@@ -142,32 +139,30 @@ if run_button:
     with col2:
         st.json(stats_pv)
 
-    # ====== average paths plot ======
+    # average paths
     n_steps = years * steps_per_year
     t = np.arange(n_steps) / steps_per_year
     equity_mean = equity_paths.mean(axis=0)
     inv_mean = inv_paths.mean(axis=0)
-    wealth_mean = wealth_paths.mean(axis=0)
+    portfolio_mean = portfolio_paths.mean(axis=0)  # <-- updated name
 
     fig1, ax1 = plt.subplots(figsize=(7, 4))
     ax1.plot(t, equity_mean, label="Mean equity")
     ax1.plot(t, inv_mean, label="Mean investment")
-    ax1.plot(t, wealth_mean, label="Mean total", linestyle="--", alpha=0.7)
+    ax1.plot(t, portfolio_mean, label="Mean portfolio value", linestyle="--", alpha=0.7)
     ax1.set_xlabel("Years")
     ax1.set_ylabel("£")
     ax1.set_title("Average path across simulations")
     ax1.legend()
     st.pyplot(fig1)
 
-    # ====== histograms ======
+    # hist raw
     bins = int(np.sqrt(n_paths))
-
-    # raw
     fig2, ax2 = plt.subplots(figsize=(6, 4))
     ax2.hist(finals, bins=bins, edgecolor="black")
     ax2.axvline(stats["mean"], color="red", linestyle="--", label=f"Mean £{stats['mean']:.0f}")
     ax2.axvline(initial_outlay, color="blue", linestyle="-", label=f"Initial outlay £{initial_outlay:.0f}")
-    ax2.set_title("Portfolio Value (raw)")
+    ax2.set_title("Ending portfolio value")
     ax2.legend()
     st.pyplot(fig2)
 
@@ -183,4 +178,3 @@ if run_button:
 
 else:
     st.info("Set your parameters in the sidebar and click **Run simulation**.")
-
