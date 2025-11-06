@@ -61,32 +61,32 @@ def simulate_path(
 
     inv_value = 0.0
     cash_history = []
-    wealth_history = []
+    portfolio_history = []
     equity_history = []
     inv_history = []
 
     for step in range(n_steps):
         t_years = step * dt
 
-        # 1) evolve property price
+        # property price
         z_price = rng.normal()
         price *= np.exp(
             (prop.price_drift - 0.5 * prop.price_vol**2) * dt
             + prop.price_vol * np.sqrt(dt) * z_price
         )
 
-        # 2) evolve rent
+        # rent
         z_rent = rng.normal()
         rent *= np.exp(
             (prop.rent_drift - 0.5 * prop.rent_vol**2) * dt
             + prop.rent_vol * np.sqrt(dt) * z_rent
         )
 
-        # 3) rental cashflow
+        # rental cashflow
         gross_rent = rent * dt * 12
         opex = gross_rent * prop.expense_ratio
 
-        # 4) mortgage payment
+        # mortgage step
         if balance > 0:
             balance, interest, principal = step_mortgage(
                 balance, payment, mort.rate, sim.steps_per_year
@@ -100,7 +100,7 @@ def simulate_path(
         if net_cf < 0:
             net_cf = 0.0
 
-        # 5) invest CF
+        # invest cash
         z_inv = rng.normal()
         inv_return = (
             np.exp(
@@ -111,21 +111,16 @@ def simulate_path(
         )
         inv_value = (inv_value + net_cf) * (1 + inv_return)
 
-        # 6) refinance check
+        # refinance rule (your simple version)
         if refi is not None:
-            # only check at decision dates (e.g. yearly)
             is_decision_time = abs((t_years % refi.decision_interval_years)) < 1e-6
             if is_decision_time:
-                # leveraged annual growth of equity
-                # equity = price - balance
-                equity = price - balance
-                # guard against division by zero
-                if equity > 1e-6:
-                    effective_equity_growth = prop.price_drift * (price / equity)
+                equity_now = price - balance
+                if equity_now > 1e-6:
+                    effective_equity_growth = prop.price_drift * (price / equity_now)
                 else:
-                    effective_equity_growth = float('inf')
+                    effective_equity_growth = float("inf")
 
-                # compare to investment return (both annual)
                 if effective_equity_growth < inv.exp_return:
                     ltv = balance / price
                     if ltv < refi.max_ltv:
@@ -135,28 +130,32 @@ def simulate_path(
                         cash_out = max(raw_cash_out - fee, 0.0)
 
                         inv_value = inv_value + cash_out
-
                         balance = new_loan
-                        new_rate = mort.rate - refi.rate_spread if refi.rate_spread else mort.rate
+
+                        new_rate = (
+                            mort.rate - refi.rate_spread
+                            if refi.rate_spread
+                            else mort.rate
+                        )
                         payment = annuity_payment(
                             balance, new_rate, mort.term_years, sim.steps_per_year
                         )
 
         equity = price - balance
-        total_wealth = equity + inv_value
+        portfolio_value = equity + inv_value
 
         cash_history.append(net_cf)
-        wealth_history.append(total_wealth)
+        portfolio_history.append(portfolio_value)
         equity_history.append(equity)
         inv_history.append(inv_value)
 
     return {
         "initial_outlay": initial_outlay,
         "cash_history": np.array(cash_history),
-        "wealth_history": np.array(wealth_history),
+        "portfolio_history": np.array(portfolio_history),
         "equity_history": np.array(equity_history),
         "inv_history": np.array(inv_history),
-        "final_wealth": wealth_history[-1],
+        "final_portfolio_value": portfolio_history[-1],
     }
 
 
@@ -170,12 +169,11 @@ def run_mc(
     sdlt: StampDutyParams = None,
     seed=123,
 ):
-    """Existing simple version: keep for your histograms."""
     rng = np.random.default_rng(seed)
     finals = []
     for _ in range(sim.n_paths):
         res = simulate_path(prop, mort, refi, inv, sim, acq, sdlt, rng)
-        finals.append(res["final_wealth"])
+        finals.append(res["final_portfolio_value"])
     return np.array(finals)
 
 
@@ -189,28 +187,27 @@ def run_mc_with_paths(
     sdlt: StampDutyParams = None,
     seed=123,
 ):
-    """New version: collect time series for averaging."""
     rng = np.random.default_rng(seed)
     finals = []
     equity_paths = []
     inv_paths = []
-    wealth_paths = []
+    portfolio_paths = []
 
     for _ in range(sim.n_paths):
         res = simulate_path(prop, mort, refi, inv, sim, acq, sdlt, rng)
-        finals.append(res["final_wealth"])
+        finals.append(res["final_portfolio_value"])
         equity_paths.append(res["equity_history"])
         inv_paths.append(res["inv_history"])
-        wealth_paths.append(res["wealth_history"])
+        portfolio_paths.append(res["portfolio_history"])
 
-    finals       = np.array(finals)
+    finals = np.array(finals)
     equity_paths = np.vstack(equity_paths)
-    inv_paths    = np.vstack(inv_paths)
-    wealth_paths = np.vstack(wealth_paths)
+    inv_paths = np.vstack(inv_paths)
+    portfolio_paths = np.vstack(portfolio_paths)
 
     return {
         "finals": finals,
         "equity_paths": equity_paths,
         "inv_paths": inv_paths,
-        "wealth_paths": wealth_paths,
+        "portfolio_paths": portfolio_paths,
     }

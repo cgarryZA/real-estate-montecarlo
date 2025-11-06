@@ -19,7 +19,7 @@ st.set_page_config(page_title="Leveraged Property Monte Carlo", layout="wide")
 st.title("Leveraged Property Investment Simulator")
 
 st.markdown(
-    "Play with purchase price, LTV, growth, and refinance rules to see terminal wealth distributions and average equity/investment paths."
+    "Play with purchase price, LTV, growth, and refinance rules to see portfolio value distributions and average equity/investment paths."
 )
 
 # -------------------------
@@ -167,7 +167,7 @@ if run_button:
     ax2.hist(finals, bins=bins, edgecolor="black")
     ax2.axvline(stats["mean"], color="red", linestyle="--", label=f"Mean £{stats['mean']:.0f}")
     ax2.axvline(initial_outlay, color="blue", linestyle="-", label=f"Initial outlay £{initial_outlay:.0f}")
-    ax2.set_title("Terminal wealth (raw)")
+    ax2.set_title("Portfolio Value (raw)")
     ax2.legend()
     st.pyplot(fig2)
 

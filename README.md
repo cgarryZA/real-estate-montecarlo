@@ -1,0 +1,143 @@
+# Leveraged Property Simulator
+
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/<yourusername>/leveraged-property-simulator/main/streamlit_app.py)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+This project models the long-term performance of a leveraged property investment strategy using Monte Carlo simulation.  
+It allows the user to explore how property prices, rental income, mortgage structure, refinance rules, and reinvestment of excess cash interact to determine portfolio outcomes over time.
+
+The simulator can be run interactively in Streamlit or directly from Python for research and analysis.
+
+---
+
+## Overview
+
+Traditional property return models often ignore the effects of leverage, refinancing, and reinvestment.  
+This simulator provides a dynamic, data-driven framework to evaluate a rental property's investment performance under uncertainty.
+
+The model evolves:
+- Property value as a stochastic process with drift and volatility.
+- Rental income with its own growth and uncertainty.
+- Mortgage balance through amortization or refinancing.
+- An investment account that receives surplus cash flow and cash-outs from refinances.
+
+Monte Carlo simulations are used to estimate the distribution of outcomes such as:
+- Final portfolio value (equity + investments)
+- Present value of portfolio
+- Return multiples on initial outlay
+- Average time evolution of equity and reinvested capital
+
+---
+
+## Features
+
+- **Stochastic modeling** of property prices and rents.
+- **Full mortgage dynamics** including repayment and refinance.
+- **Investment portfolio** for reinvested cash flows.
+- **Acquisition cost breakdown** including stamp duty and fees.
+- **Present value discounting** and performance metrics.
+- **Streamlit web interface** with interactive sliders and live plots.
+- **Matplotlib visualizations**:
+  - Portfolio value histograms
+  - ECDF and PV multiples
+  - Average equity and investment paths
+
+---
+
+## Example Outputs
+
+- Distribution of portfolio value after 15 years.
+- Median and mean PV-adjusted results compared to initial outlay.
+- Mean trajectories of property equity and reinvested portfolio.
+- Sensitivity to leverage, interest rates, rent drift, and volatility.
+
+---
+
+## Project Structure
+
+```
+leveraged-property-simulator/
+├── streamlit_app.py          # Interactive dashboard
+├── main.py                   # CLI and batch version
+├── simulate.py               # Monte Carlo engine
+├── models.py                 # Parameter dataclasses
+├── mortgage.py               # Mortgage repayment logic
+├── analyze.py                # Summary statistics and plotting
+├── requirements.txt          # Python dependencies
+└── README.md
+```
+
+---
+
+## Getting Started
+
+### 1. Local setup
+
+```bash
+git clone https://github.com/<yourusername>/leveraged-property-simulator.git
+cd leveraged-property-simulator
+pip install -r requirements.txt
+streamlit run streamlit_app.py
+```
+
+Then open the link shown in your terminal (usually http://localhost:8501).
+
+### 2. Run in Python
+
+You can also use the simulation directly:
+
+```python
+from simulate import run_mc_with_paths
+from models import PropertyParams, MortgageParams, RefiParams, InvestmentParams, SimulationParams
+
+prop = PropertyParams(initial_price=300000, price_drift=0.03, price_vol=0.12, rent_initial=2000, rent_drift=0.02, rent_vol=0.08, expense_ratio=0.1)
+mort = MortgageParams(initial_ltv=0.8, rate=0.04, term_years=35)
+refi = RefiParams(max_ltv=0.75, refi_fee_ratio=0.02, rate_spread=0.005, decision_interval_years=1)
+inv = InvestmentParams(exp_return=0.07, vol=0.15)
+sim = SimulationParams(years=15, steps_per_year=12, n_paths=5000)
+
+results = run_mc_with_paths(prop, mort, refi, inv, sim)
+```
+
+---
+
+## Requirements
+
+- Python 3.10+
+- NumPy
+- Matplotlib
+- Streamlit
+- (Optional) SciPy for kernel density estimation
+
+Install with:
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+## Research Direction
+
+This simulator provides a foundation for future quantitative studies, such as:
+
+- Optimal refinance timing under uncertainty.
+- Dynamic leverage optimization.
+- Risk-return trade-offs for real assets with stochastic cash flows.
+- Integration with portfolio-level real estate models.
+
+---
+
+## License
+
+MIT License.  
+Feel free to use, modify, and extend this project for academic or commercial research.
+
+---
+
+## Author
+
+**Christian Garry**  
+Graduate Communications Engineer at Siemens  
+MSc Scientific Computing & Data Analysis (AI for Engineering)  
+Durham University
