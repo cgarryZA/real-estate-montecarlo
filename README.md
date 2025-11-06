@@ -3,53 +3,56 @@
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/<yourusername>/leveraged-property-simulator/main/streamlit_app.py)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-This project models the long-term performance of a leveraged property investment strategy using Monte Carlo simulation.  
-It allows the user to explore how property prices, rental income, mortgage structure, refinance rules, and reinvestment of excess cash interact to determine portfolio outcomes over time.
+This project models the long-term performance of a **leveraged property investment strategy** using Monte Carlo simulation.  
+It allows users to explore how property prices, rental income, mortgage structure, refinancing rules, and reinvestment of surplus cash interact to determine portfolio outcomes through time.
 
-The simulator can be run interactively in Streamlit or directly from Python for research and analysis.
+The simulator can be run interactively in **Streamlit** or directly from Python for research and analysis.
 
 ---
 
 ## Overview
 
-Traditional property return models often ignore the effects of leverage, refinancing, and reinvestment.  
-This simulator provides a dynamic, data-driven framework to evaluate a rental property's investment performance under uncertainty.
+Conventional property ROI models often ignore leverage, amortisation, refinancing, and reinvestment.  
+This simulator provides a dynamic, data-driven framework to evaluate a rental property’s investment performance under uncertainty.
 
 The model evolves:
-- Property value as a stochastic process with drift and volatility.
-- Rental income with its own growth and uncertainty.
-- Mortgage balance through amortization or refinancing.
-- An investment account that receives surplus cash flow and cash-outs from refinances.
+- **Property value** as a stochastic process with drift and volatility.  
+- **Rental income** with its own growth and randomness.  
+- **Mortgage balance** through amortisation and optional refinancing.  
+- **Investment account** that accumulates reinvested cash flows and refinance proceeds.
 
-Monte Carlo simulations are used to estimate the distribution of outcomes such as:
-- Final portfolio value (equity + investments)
-- Present value of portfolio
-- Return multiples on initial outlay
-- Average time evolution of equity and reinvested capital
+Monte Carlo simulation produces the full **distribution** of results rather than a single deterministic forecast, including:
+- Ending portfolio value (equity + investment account)  
+- Present-value-discounted outcomes  
+- Return multiples on initial outlay  
+- Mean time evolution of equity and cash investments  
 
 ---
 
 ## Features
 
-- **Stochastic modeling** of property prices and rents.
-- **Full mortgage dynamics** including repayment and refinance.
-- **Investment portfolio** for reinvested cash flows.
-- **Acquisition cost breakdown** including stamp duty and fees.
-- **Present value discounting** and performance metrics.
-- **Streamlit web interface** with interactive sliders and live plots.
-- **Matplotlib visualizations**:
-  - Portfolio value histograms
-  - ECDF and PV multiples
-  - Average equity and investment paths
+- **Stochastic modelling** of property and rent.  
+- **Amortisation & refinance logic**  
+  - Implements a “**dumb amortisation rule**”: the mortgage is rebalanced up to a target LTV whenever the modelled equity growth underperforms the investment market, ignoring future expectations.  
+  - Serves as a baseline for later optimal-stopping or dynamic-programming approaches.  
+- **Investment portfolio** to reinvest cash flow and refinance proceeds.  
+- **Acquisition cost breakdown** (stamp duty, solicitor, mortgage, and fixed fees).  
+- **Present value discounting** and summary metrics.  
+- **Streamlit web interface** with interactive sliders and live Matplotlib charts.  
+- **Matplotlib visualisations**:  
+  - Portfolio value histograms  
+  - PV multiples (total vs investment-only)  
+  - ECDF plots and cumulative distributions  
+  - Average equity and investment paths over time  
 
 ---
 
 ## Example Outputs
 
-- Distribution of portfolio value after 15 years.
-- Median and mean PV-adjusted results compared to initial outlay.
-- Mean trajectories of property equity and reinvested portfolio.
-- Sensitivity to leverage, interest rates, rent drift, and volatility.
+- Distribution of portfolio value after 15 years.  
+- Median and mean PV-adjusted results vs initial outlay.  
+- Mean trajectories of property equity and reinvested portfolio.  
+- Sensitivity to leverage, interest rates, rent drift, and volatility.  
 
 ---
 
@@ -57,13 +60,13 @@ Monte Carlo simulations are used to estimate the distribution of outcomes such a
 
 ```
 leveraged-property-simulator/
-├── streamlit_app.py          # Interactive dashboard
-├── main.py                   # CLI and batch version
+├── streamlit_app.py          # Interactive Streamlit dashboard
+├── main.py                   # CLI/batch version
 ├── simulate.py               # Monte Carlo engine
 ├── models.py                 # Parameter dataclasses
 ├── mortgage.py               # Mortgage repayment logic
-├── analyze.py                # Summary statistics and plotting
-├── requirements.txt          # Python dependencies
+├── analyze.py                # Summary statistics and utilities
+├── requirements.txt          # Dependencies
 └── README.md
 ```
 
@@ -84,7 +87,7 @@ Then open the link shown in your terminal (usually http://localhost:8501).
 
 ### 2. Run in Python
 
-You can also use the simulation directly:
+You can also run simulations directly in Python:
 
 ```python
 from simulate import run_mc_with_paths
@@ -103,11 +106,11 @@ results = run_mc_with_paths(prop, mort, refi, inv, sim)
 
 ## Requirements
 
-- Python 3.10+
-- NumPy
-- Matplotlib
-- Streamlit
-- (Optional) SciPy for kernel density estimation
+- Python 3.10+  
+- NumPy  
+- Matplotlib  
+- Streamlit  
+- (Optional) SciPy for kernel density estimation  
 
 Install with:
 
@@ -119,19 +122,19 @@ pip install -r requirements.txt
 
 ## Research Direction
 
-This simulator provides a foundation for future quantitative studies, such as:
+This simulator provides a foundation for future quantitative extensions, such as:
 
-- Optimal refinance timing under uncertainty.
-- Dynamic leverage optimization.
-- Risk-return trade-offs for real assets with stochastic cash flows.
-- Integration with portfolio-level real estate models.
+- Optimal refinance timing under uncertainty.  
+- Dynamic leverage control using reinforcement learning.  
+- Risk-return frontiers for stochastic real assets.  
+- Integration into larger portfolio optimisation frameworks.  
 
 ---
 
 ## License
 
 MIT License.  
-Feel free to use, modify, and extend this project for academic or commercial research.
+Feel free to use, modify, and extend this project for academic or commercial purposes.
 
 ---
 
