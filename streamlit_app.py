@@ -264,7 +264,7 @@ if run_button:
         ax4.legend()
         st.pyplot(fig4)
 
-    # ============================
+        # ============================
     # OPTIONAL: LTV sweep plot
     # ============================
     if show_opt:
@@ -278,12 +278,14 @@ if run_button:
             initial_ltv + 0.05,
             initial_ltv + 0.1,
         ]
-        # keep only valid ones
         candidate_ltvs = [x for x in candidate_ltvs if 0.5 <= x <= 0.95]
 
-        ann_ret_list = []
-        ann_vol_list = []
+        mean_cagr_list = []
+        std_cagr_list = []
         sharpe_list = []
+
+        rf = 0.02  # 2 percent risk free
+        T = years
 
         for ltv in candidate_ltvs:
             tmp_mort = MortgageParams(
@@ -291,7 +293,7 @@ if run_button:
                 rate=mort_rate,
                 term_years=term_years,
             )
-            # try calling with tax
+            # run sim (with tax if available)
             try:
                 tmp_mc = run_mc_with_paths(
                     prop,
@@ -314,41 +316,49 @@ if run_button:
                     sdlt,
                 )
 
-            tmp_paths = tmp_mc["portfolio_paths"]
-            ann_ret, ann_vol, sharpe = path_stats_from_portfolios(
-                tmp_paths,
-                steps_per_year=steps_per_year,
-                risk_free=0.02,
-            )
-            # average across paths
-            ann_ret_list.append(ann_ret.mean())
-            ann_vol_list.append(ann_vol.mean())
-            sharpe_list.append(sharpe.mean())
+            tmp_finals = tmp_mc["finals"]
 
-        ann_ret_arr = np.array(ann_ret_list)
-        ann_vol_arr = np.array(ann_vol_list)
+            # use initial_outlay as starting capital
+            # (we could recompute per LTV, but this is fine for comparison)
+            V0 = initial_outlay
+            # cagr per path
+            cagr_paths = (tmp_finals / V0) ** (1.0 / T) - 1.0
+
+            mean_cagr = float(np.mean(cagr_paths))
+            std_cagr = float(np.std(cagr_paths))
+            if std_cagr > 0:
+                sharpe = (mean_cagr - rf) / std_cagr
+            else:
+                sharpe = 0.0
+
+            mean_cagr_list.append(mean_cagr)
+            std_cagr_list.append(std_cagr)
+            sharpe_list.append(sharpe)
+
+        mean_cagr_arr = np.array(mean_cagr_list)
+        std_cagr_arr = np.array(std_cagr_list)
         sharpe_arr = np.array(sharpe_list)
 
-        best_idx = np.argmax(sharpe_arr)
+        best_idx = int(np.argmax(sharpe_arr))
 
         fig5, ax5 = plt.subplots(figsize=(6, 3.5))
-        sc = ax5.scatter(ann_vol_arr, ann_ret_arr, c=sharpe_arr, cmap="viridis", s=80)
+        sc = ax5.scatter(std_cagr_arr * 100, mean_cagr_arr * 100, c=sharpe_arr, cmap="viridis", s=80)
         ax5.scatter(
-            ann_vol_arr[best_idx],
-            ann_ret_arr[best_idx],
+            std_cagr_arr[best_idx] * 100,
+            mean_cagr_arr[best_idx] * 100,
             c="red",
             s=120,
             label="Best Sharpe",
         )
         for i, ltv in enumerate(candidate_ltvs):
-            ax5.text(ann_vol_arr[i], ann_ret_arr[i], f"{ltv:.2f}", fontsize=8)
+            ax5.text(std_cagr_arr[i] * 100, mean_cagr_arr[i] * 100, f"{ltv:.2f}", fontsize=8)
 
-        ax5.set_xlabel("Annualised volatility")
-        ax5.set_ylabel("Annualised return")
-        ax5.set_title("Risk return by LTV (colour = Sharpe)")
+        ax5.set_xlabel("Scenario volatility of CAGR (%)")
+        ax5.set_ylabel("Mean CAGR (%)")
+        ax5.set_title("Risk return by LTV (CAGR based)")
         ax5.legend()
-        plt.tight_layout()
+        fig5.colorbar(sc, label="Sharpe")
         st.pyplot(fig5)
-
+        
 else:
     st.info("Set your parameters in the sidebar and click **Run simulation**.")
