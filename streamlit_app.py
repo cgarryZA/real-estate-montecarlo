@@ -21,32 +21,6 @@ st.markdown(
     "Adjust the parameters in the sidebar and simulate how a leveraged property and reinvestment strategy performs over time."
 )
 
-
-# ---------------------------------------------------------------------
-# helper to get annualised return / vol / sharpe from portfolio paths
-# ---------------------------------------------------------------------
-def path_stats_from_portfolios(
-    portfolio_paths: np.ndarray, steps_per_year: int, risk_free: float = 0.03
-):
-    """
-    portfolio_paths shape: (n_paths, n_steps)
-    We convert levels to step returns then annualise.
-    """
-    rets = portfolio_paths[:, 1:] / portfolio_paths[:, :-1] - 1.0  # (n_paths, n_steps-1)
-    mean_step = rets.mean(axis=1)
-    std_step = rets.std(axis=1, ddof=1)
-
-    ann_return = (1.0 + mean_step) ** steps_per_year - 1.0
-    ann_vol = std_step * np.sqrt(steps_per_year)
-
-    excess = ann_return - risk_free
-    sharpe = np.zeros_like(excess)
-    nonzero = ann_vol > 0
-    sharpe[nonzero] = excess[nonzero] / ann_vol[nonzero]
-
-    return ann_return, ann_vol, sharpe
-
-
 # =============== SIDEBAR =================
 st.sidebar.header("Property & Rent")
 price = st.sidebar.number_input("Purchase price (£)", 50_000, 2_000_000, 295_000, 5_000)
@@ -167,7 +141,6 @@ if run_button:
             corporate_tax_rate=corp_tax,
         )
     except TypeError:
-        # fallback for older simulate.py signature
         mc = run_mc_with_paths(
             prop,
             mort,
@@ -195,11 +168,18 @@ if run_button:
 
     stats_total = summarize(final_portfolio)
 
-    # compute Sharpe from simulated portfolio paths
-    ann_ret, ann_vol, sharpe_arr = path_stats_from_portfolios(
-        portfolio_paths, steps_per_year=steps_per_year, risk_free=0.02
-    )
-    mean_sharpe = float(np.mean(sharpe_arr))
+    # ------------------------------------------------
+    # CAGR based Sharpe
+    # ------------------------------------------------
+    # each path has an ending value -> turn into CAGR
+    cagr_paths = (final_portfolio / initial_outlay) ** (1.0 / years) - 1.0
+    mean_cagr = float(np.mean(cagr_paths))
+    std_cagr = float(np.std(cagr_paths))
+    rf = 0.03  # or whatever you want
+    if std_cagr > 0:
+        sharpe = (mean_cagr - rf) / std_cagr
+    else:
+        sharpe = 0.0
 
     mean_total = final_portfolio.mean()
     mean_equity = final_equity.mean()
@@ -211,7 +191,7 @@ if run_button:
     m2.metric("Mean equity component", f"£{mean_equity:,.0f}")
     m3.metric("Mean investment component", f"£{mean_invest:,.0f}")
     m4.metric("Initial outlay", f"£{initial_outlay:,.0f}")
-    m5.metric("Mean Sharpe (sim)", f"{mean_sharpe:.2f}")
+    m5.metric("Sharpe (CAGR based)", f"{sharpe:.2f}")
 
     # =============== LAYOUT FOR PLOTS ===============
     col_left, col_right = st.columns(2)
@@ -236,7 +216,7 @@ if run_button:
         )
         ax1.set_xlabel("Years")
         ax1.set_ylabel("£")
-        ax1.set_title("Average path of portfolio components")
+        ax1.set_title(f"Average path of portfolio components (Sharpe {sharpe:.2f})")
         ax1.legend()
         st.pyplot(fig1)
 
@@ -257,7 +237,7 @@ if run_button:
             linestyle="-",
             label=f"Initial outlay £{initial_outlay:.0f}",
         )
-        ax2.set_title(f"Ending portfolio value  (avg Sharpe {mean_sharpe:.2f})")
+        ax2.set_title("Ending portfolio value")
         ax2.set_xlabel("£")
         ax2.set_ylabel("Frequency")
         ax2.legend()
