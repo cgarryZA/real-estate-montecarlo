@@ -1,5 +1,3 @@
-# main.py
-
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -91,7 +89,17 @@ def main():
         mortgage_fee_pct_of_loan=0.005,
     )
 
-    mc = run_mc_with_paths(prop, mort, refi, inv, sim, acq, sdlt)
+    # NEW: pass corporate_tax_rate
+    mc = run_mc_with_paths(
+        prop,
+        mort,
+        refi,
+        inv,
+        sim,
+        acq,
+        sdlt,
+        corporate_tax_rate=0.19,
+    )
     final_portfolios = mc["finals"]
     equity_paths = mc["equity_paths"]
     inv_paths = mc["inv_paths"]

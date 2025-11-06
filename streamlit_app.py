@@ -58,6 +58,10 @@ solicitor_pct = st.sidebar.number_input("Solicitor (% of price)", 0.0, 0.02, 0.0
 mortgage_fee_pct = st.sidebar.number_input("Mortgage fee (% of loan)", 0.0, 0.02, 0.005, 0.0005)
 sdlt_surcharge = st.sidebar.number_input("SDLT surcharge", 0.0, 0.05, 0.03, 0.001)
 
+# NEW: tax
+st.sidebar.header("Tax")
+corp_tax = st.sidebar.slider("Corporate tax rate", 0.0, 0.35, 0.19, 0.01)
+
 run_button = st.sidebar.button("Run simulation")
 
 # =============== BUILD PARAM OBJECTS ===============
@@ -114,7 +118,16 @@ acq = AcquisitionCosts(
 
 # =============== RUN ===============
 if run_button:
-    mc = run_mc_with_paths(prop, mort, refi, inv, sim, acq, sdlt)
+    mc = run_mc_with_paths(
+        prop,
+        mort,
+        refi,
+        inv,
+        sim,
+        acq,
+        sdlt,
+        corporate_tax_rate=corp_tax,  # pass tax rate through
+    )
     final_portfolio = mc["finals"]
     equity_paths = mc["equity_paths"]
     inv_paths = mc["inv_paths"]
@@ -184,18 +197,14 @@ if run_button:
 
     # ----- left2: PV multiple with investment-only overlay -----
     with col_left2:
-        # total PV multiple
         total_multiples = final_portfolio_pv / initial_outlay
-        # investment-only PV multiple (what the investment account achieved on its own cash)
         invest_pv = final_invest / df
         invest_multiples = invest_pv / initial_outlay
 
         bins_mult = int(np.sqrt(n_paths))
         fig3, ax3 = plt.subplots(figsize=(6, 3.5))
-        # investment only first (lighter) then total on top
         ax3.hist(invest_multiples, bins=bins_mult, edgecolor="black", alpha=0.4, label="Investment account PV multiple")
         ax3.hist(total_multiples, bins=bins_mult, edgecolor="black", alpha=0.6, label="Total PV multiple")
-
         ax3.axvline(1.0, color="blue", linestyle="-", label="1.0× initial cash")
         ax3.axvline(np.median(total_multiples), color="green", linestyle="--", label=f"Total median {np.median(total_multiples):.2f}×")
         ax3.set_title("PV multiples (total vs investment only)")

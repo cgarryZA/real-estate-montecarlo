@@ -34,15 +34,26 @@ def compute_initial_outlay(
 
 
 def simulate_path(
-    prop,
-    mort,
-    refi,
-    inv,
-    sim,
+    prop: PropertyParams,
+    mort: MortgageParams,
+    refi: RefiParams,
+    inv: InvestmentParams,
+    sim: SimulationParams,
     acq: AcquisitionCosts = None,
     sdlt: StampDutyParams = None,
+    corporate_tax_rate: float = 0.19,
     rng=None,
 ):
+    """
+    Simulate a single path of:
+    - property price
+    - mortgage
+    - rental cashflow
+    - after tax cash
+    - reinvestment
+    - optional refinance
+    and return time series of portfolio components.
+    """
     if rng is None:
         rng = np.random.default_rng()
 
@@ -68,21 +79,21 @@ def simulate_path(
     for step in range(n_steps):
         t_years = step * dt
 
-        # property price
+        # evolve property price
         z_price = rng.normal()
         price *= np.exp(
             (prop.price_drift - 0.5 * prop.price_vol**2) * dt
             + prop.price_vol * np.sqrt(dt) * z_price
         )
 
-        # rent
+        # evolve rent
         z_rent = rng.normal()
         rent *= np.exp(
             (prop.rent_drift - 0.5 * prop.rent_vol**2) * dt
             + prop.rent_vol * np.sqrt(dt) * z_rent
         )
 
-        # rental cashflow
+        # rental cashflow components
         gross_rent = rent * dt * 12
         opex = gross_rent * prop.expense_ratio
 
@@ -91,16 +102,25 @@ def simulate_path(
             balance, interest, principal = step_mortgage(
                 balance, payment, mort.rate, sim.steps_per_year
             )
-            debt_service = payment
         else:
-            debt_service = 0.0
             interest = 0.0
+            principal = 0.0
+            payment = 0.0
 
-        net_cf = gross_rent - opex - debt_service
+        # taxable profit: rent - opex - interest
+        taxable_profit = gross_rent - opex - interest
+        if taxable_profit < 0:
+            taxable_profit = 0.0
+
+        tax = taxable_profit * corporate_tax_rate
+        after_tax_profit = taxable_profit - tax
+
+        # cash available after paying principal (principal is not deductible)
+        net_cf = after_tax_profit - principal
         if net_cf < 0:
             net_cf = 0.0
 
-        # invest cash
+        # evolve investment account with this cash
         z_inv = rng.normal()
         inv_return = (
             np.exp(
@@ -111,7 +131,7 @@ def simulate_path(
         )
         inv_value = (inv_value + net_cf) * (1 + inv_return)
 
-        # refinance rule (your simple version)
+        # refinance rule (simple heuristic)
         if refi is not None:
             is_decision_time = abs((t_years % refi.decision_interval_years)) < 1e-6
             if is_decision_time:
@@ -121,13 +141,13 @@ def simulate_path(
                 else:
                     effective_equity_growth = float("inf")
 
+                # if property equity is compounding slower than investment, consider refi
                 if effective_equity_growth < inv.exp_return:
                     ltv = balance / price
                     if ltv < refi.max_ltv:
                         new_loan = price * refi.max_ltv
                         fee = new_loan * refi.refi_fee_ratio
-                        raw_cash_out = new_loan - balance
-                        cash_out = max(raw_cash_out - fee, 0.0)
+                        cash_out = max(new_loan - balance - fee, 0.0)
 
                         inv_value = inv_value + cash_out
                         balance = new_loan
@@ -160,33 +180,51 @@ def simulate_path(
 
 
 def run_mc(
-    prop,
-    mort,
-    refi,
-    inv,
-    sim,
+    prop: PropertyParams,
+    mort: MortgageParams,
+    refi: RefiParams,
+    inv: InvestmentParams,
+    sim: SimulationParams,
     acq: AcquisitionCosts = None,
     sdlt: StampDutyParams = None,
-    seed=123,
+    corporate_tax_rate: float = 0.19,
+    seed: int = 123,
 ):
+    """
+    Simple MC that only returns final portfolio values.
+    """
     rng = np.random.default_rng(seed)
     finals = []
     for _ in range(sim.n_paths):
-        res = simulate_path(prop, mort, refi, inv, sim, acq, sdlt, rng)
+        res = simulate_path(
+            prop,
+            mort,
+            refi,
+            inv,
+            sim,
+            acq,
+            sdlt,
+            corporate_tax_rate=corporate_tax_rate,
+            rng=rng,
+        )
         finals.append(res["final_portfolio_value"])
     return np.array(finals)
 
 
 def run_mc_with_paths(
-    prop,
-    mort,
-    refi,
-    inv,
-    sim,
+    prop: PropertyParams,
+    mort: MortgageParams,
+    refi: RefiParams,
+    inv: InvestmentParams,
+    sim: SimulationParams,
     acq: AcquisitionCosts = None,
     sdlt: StampDutyParams = None,
-    seed=123,
+    corporate_tax_rate: float = 0.19,
+    seed: int = 123,
 ):
+    """
+    MC that also collects time series so we can average equity, investment and portfolio over time.
+    """
     rng = np.random.default_rng(seed)
     finals = []
     equity_paths = []
@@ -194,7 +232,17 @@ def run_mc_with_paths(
     portfolio_paths = []
 
     for _ in range(sim.n_paths):
-        res = simulate_path(prop, mort, refi, inv, sim, acq, sdlt, rng)
+        res = simulate_path(
+            prop,
+            mort,
+            refi,
+            inv,
+            sim,
+            acq,
+            sdlt,
+            corporate_tax_rate=corporate_tax_rate,
+            rng=rng,
+        )
         finals.append(res["final_portfolio_value"])
         equity_paths.append(res["equity_history"])
         inv_paths.append(res["inv_history"])

@@ -77,8 +77,8 @@ leveraged-property-simulator/
 ### 1. Local setup
 
 ```bash
-git clone https://github.com/<yourusername>/leveraged-property-simulator.git
-cd leveraged-property-simulator
+git clone https://github.com/<yourusername>/real-estate-montecarlo.git
+cd real-estate-montecarlo
 pip install -r requirements.txt
 streamlit run streamlit_app.py
 ```
