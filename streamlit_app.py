@@ -21,36 +21,9 @@ st.markdown(
     "Adjust the parameters in the sidebar and simulate how a leveraged property and reinvestment strategy performs over time."
 )
 
-
 # ------------------------------------------------------------
-# helpers
+# helper: benchmark “just invest the initial outlay”
 # ------------------------------------------------------------
-def sharpe_from_paths(paths: np.ndarray, steps_per_year: int, risk_free: float = 0.03) -> float:
-    """
-    paths: (n_paths, n_steps) of portfolio levels
-    compute Sharpe per path then average
-    """
-    n_paths, n_steps = paths.shape
-    if n_steps < 2:
-        return 0.0
-
-    step_rets = paths[:, 1:] / paths[:, :-1] - 1.0  # (n_paths, n_steps-1)
-    # annualise per path
-    mean_step = step_rets.mean(axis=1)
-    std_step = step_rets.std(axis=1, ddof=1)
-
-    ann_ret = (1 + mean_step) ** steps_per_year - 1
-    ann_vol = std_step * np.sqrt(steps_per_year)
-
-    excess = ann_ret - risk_free
-    sharpe_per_path = np.zeros_like(excess)
-    mask = ann_vol > 0
-    sharpe_per_path[mask] = excess[mask] / ann_vol[mask]
-
-    # return average sharpe across sims (could also use median)
-    return float(np.mean(sharpe_per_path))
-
-
 def mc_invest_initial_outlay(
     initial_outlay: float,
     exp_return: float,
@@ -61,8 +34,9 @@ def mc_invest_initial_outlay(
     seed: int = 999,
 ):
     """
-    Simple GBM for 'just invest the initial cash in the market'
-    returns (paths, mean_path)
+    Simple GBM: start with initial_outlay and grow with same market params.
+    Returns (paths, mean_path)
+    paths shape: (n_paths, n_steps)
     """
     rng = np.random.default_rng(seed)
     dt = 1 / steps_per_year
@@ -74,9 +48,32 @@ def mc_invest_initial_outlay(
             paths[i, t] = level
             if t < n_steps - 1:
                 z = rng.normal()
-                level *= np.exp((exp_return - 0.5 * vol**2) * dt + vol * np.sqrt(dt) * z)
+                level *= np.exp(
+                    (exp_return - 0.5 * vol**2) * dt + vol * np.sqrt(dt) * z
+                )
     mean_path = paths.mean(axis=0)
     return paths, mean_path
+
+
+# ------------------------------------------------------------
+# helper: Sharpe from final MC distribution (CAGR-based)
+# ------------------------------------------------------------
+def sharpe_from_finals(
+    final_values: np.ndarray,
+    initial: float,
+    years: int,
+    rf: float,
+) -> float:
+    """
+    final_values: (n_paths,) ending wealth
+    convert each to CAGR, then Sharpe = (mean_cagr - rf) / std_cagr
+    """
+    cagr = (final_values / initial) ** (1.0 / years) - 1.0
+    mean_cagr = float(np.mean(cagr))
+    std_cagr = float(np.std(cagr, ddof=1))
+    if std_cagr <= 0:
+        return 0.0
+    return (mean_cagr - rf) / std_cagr
 
 
 # =============== SIDEBAR =================
@@ -105,7 +102,9 @@ rate_spread = st.sidebar.slider(
 refi_interval = st.sidebar.slider("Refi decision interval (years)", 1, 5, 2, 1)
 
 st.sidebar.header("Investment")
-inv_return = st.sidebar.slider("Investment exp. return (annual %)", 0.0, 0.15, 0.07, 0.005)
+inv_return = st.sidebar.slider(
+    "Investment exp. return (annual %)", 0.0, 0.15, 0.07, 0.005
+)
 inv_vol = st.sidebar.slider("Investment vol (annual %)", 0.0, 0.5, 0.15, 0.01)
 
 st.sidebar.header("Simulation")
@@ -122,9 +121,7 @@ solicitor_pct = st.sidebar.number_input(
 mortgage_fee_pct = st.sidebar.number_input(
     "Mortgage fee (% of loan)", 0.0, 0.02, 0.005, 0.0005
 )
-sdlt_surcharge = st.sidebar.number_input(
-    "SDLT surcharge", 0.0, 0.05, 0.03, 0.001
-)
+sdlt_surcharge = st.sidebar.number_input("SDLT surcharge", 0.0, 0.05, 0.03, 0.001)
 
 # tax
 st.sidebar.header("Tax")
@@ -218,10 +215,12 @@ if run_button:
     inv_paths = mc["inv_paths"]
     portfolio_paths = mc["portfolio_paths"]
 
-    # initial cash actually used
+    # actual initial cash out (deposit + fees)
     initial_outlay = compute_initial_outlay(prop, mort, acq, sdlt)
+    # deposit only (outlay minus fees)
+    deposit_only = price * (1.0 - initial_ltv)
 
-    # discount to PV for comparison
+    # discount to PV for comparison (same as before)
     df = (1 + 0.03) ** years
     final_portfolio_pv = final_portfolio / df
 
@@ -234,11 +233,11 @@ if run_button:
     # averaged paths for main strategy
     n_steps = years * steps_per_year
     t = np.arange(n_steps) / steps_per_year
-    portfolio_mean_path = portfolio_paths.mean(axis=0)
+    strategy_mean_path = portfolio_paths.mean(axis=0)
 
-    # ------------------------------------------------------------------
-    # benchmark: invest initial outlay in the market with same µ, σ
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------
+    # BENCHMARK MC: invest the initial outlay in the same market
+    # ------------------------------------------------------------
     bench_paths, bench_mean_path = mc_invest_initial_outlay(
         initial_outlay,
         exp_return=inv_return,
@@ -248,12 +247,18 @@ if run_button:
         n_paths=n_paths,
     )
 
-    # risk free curve (deterministic)
+    # risk free curve
     risk_free_curve = initial_outlay * (1 + rf_rate) ** t
 
-    # Sharpe for both using per-path method
-    strategy_sharpe = sharpe_from_paths(portfolio_paths, steps_per_year, rf_rate)
-    benchmark_sharpe = sharpe_from_paths(bench_paths, steps_per_year, rf_rate)
+    # ------------------------------------------------------------
+    # Sharpe from final distributions (stable)
+    # ------------------------------------------------------------
+    strategy_sharpe = sharpe_from_finals(
+        final_portfolio, initial_outlay, years, rf_rate
+    )
+    bench_sharpe = sharpe_from_finals(
+        bench_paths[:, -1], initial_outlay, years, rf_rate
+    )
 
     # top metrics
     mean_total = final_portfolio.mean()
@@ -265,28 +270,51 @@ if run_button:
     m1.metric("Mean ending portfolio", f"£{mean_total:,.0f}")
     m2.metric("Mean equity component", f"£{mean_equity:,.0f}")
     m3.metric("Mean investment component", f"£{mean_invest:,.0f}")
-    m4.metric("Initial outlay", f"£{initial_outlay:,.0f}")
+    m4.metric("Initial outlay (with fees)", f"£{initial_outlay:,.0f}")
     m5.metric(
-        "Sharpe (strategy vs bench)",
-        f"Strat {strategy_sharpe:.2f}  |  Bench {benchmark_sharpe:.2f}",
+        "Sharpe (strategy | benchmark)",
+        f"{strategy_sharpe:.2f} | {bench_sharpe:.2f}",
     )
 
     # =============== LAYOUT FOR PLOTS ===============
     col_left, col_right = st.columns(2)
 
-    # left: average paths + benchmark + risk free
+    # left: strategy vs benchmark vs risk free
     with col_left:
         fig1, ax1 = plt.subplots(figsize=(6, 3.5))
-        ax1.plot(t, portfolio_mean_path, label=f"Strategy mean (Sharpe {strategy_sharpe:.2f})", linewidth=2)
-        ax1.plot(t, bench_mean_path, label=f"Invest initial (Sharpe {benchmark_sharpe:.2f})", linestyle="--")
-        ax1.plot(t, risk_free_curve, label=f"Risk free {rf_rate*100:.1f}% p.a.", linestyle=":")
+        ax1.plot(
+            t,
+            strategy_mean_path,
+            label=f"Strategy mean (Sharpe {strategy_sharpe:.2f})",
+            linewidth=2,
+        )
+        ax1.plot(
+            t,
+            bench_mean_path,
+            label=f"Invest initial (Sharpe {bench_sharpe:.2f})",
+            linestyle="--",
+        )
+        ax1.plot(
+            t,
+            risk_free_curve,
+            label=f"Risk free {rf_rate*100:.1f}% p.a.",
+            linestyle=":",
+        )
+        # extra: show deposit-only point at t=0
+        ax1.scatter(
+            [0],
+            [deposit_only],
+            color="black",
+            zorder=5,
+            label="Deposit only (outlay minus fees)",
+        )
         ax1.set_xlabel("Years")
         ax1.set_ylabel("£")
         ax1.set_title("Strategy vs investing initial outlay")
         ax1.legend()
         st.pyplot(fig1)
 
-    # right: ending portfolio histogram (same as before)
+    # right: ending portfolio histogram
     with col_right:
         bins = int(np.sqrt(n_paths))
         fig2, ax2 = plt.subplots(figsize=(6, 3.5))
