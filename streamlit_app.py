@@ -33,11 +33,6 @@ def mc_invest_initial_outlay(
     n_paths: int,
     seed: int = 999,
 ):
-    """
-    Simple GBM: start with initial_outlay and grow with same market params.
-    Returns (paths, mean_path)
-    paths shape: (n_paths, n_steps)
-    """
     rng = np.random.default_rng(seed)
     dt = 1 / steps_per_year
     n_steps = years * steps_per_year
@@ -54,9 +49,8 @@ def mc_invest_initial_outlay(
     mean_path = paths.mean(axis=0)
     return paths, mean_path
 
-
 # ------------------------------------------------------------
-# helper: Sharpe from final MC distribution (CAGR-based)
+# helper: Sharpe from final MC distribution (robust)
 # ------------------------------------------------------------
 def sharpe_from_finals(
     final_values: np.ndarray,
@@ -66,13 +60,26 @@ def sharpe_from_finals(
 ) -> float:
     """
     final_values: (n_paths,) ending wealth
-    convert each to CAGR, then Sharpe = (mean_cagr - rf) / std_cagr
+    We drop non-positive endings (cannot take fractional power of negative)
+    Sharpe = (mean_cagr - rf) / std_cagr
     """
-    cagr = (final_values / initial) ** (1.0 / years) - 1.0
+    ratios = final_values / float(initial)
+
+    # keep only positive endings
+    mask = ratios > 0.0
+    if mask.sum() < 2:
+        return 0.0
+
+    ratios = ratios[mask]
+    cagr = ratios ** (1.0 / years) - 1.0  # safe now
+
     mean_cagr = float(np.mean(cagr))
     std_cagr = float(np.std(cagr, ddof=1))
-    if std_cagr <= 0:
+
+    # if no dispersion, Sharpe is 0
+    if std_cagr <= 1e-9:
         return 0.0
+
     return (mean_cagr - rf) / std_cagr
 
 
@@ -235,9 +242,7 @@ if run_button:
     t = np.arange(n_steps) / steps_per_year
     strategy_mean_path = portfolio_paths.mean(axis=0)
 
-    # ------------------------------------------------------------
-    # BENCHMARK MC: invest the initial outlay in the same market
-    # ------------------------------------------------------------
+    # BENCHMARK MC: invest the initial outlay
     bench_paths, bench_mean_path = mc_invest_initial_outlay(
         initial_outlay,
         exp_return=inv_return,
@@ -250,9 +255,7 @@ if run_button:
     # risk free curve
     risk_free_curve = initial_outlay * (1 + rf_rate) ** t
 
-    # ------------------------------------------------------------
-    # Sharpe from final distributions (stable)
-    # ------------------------------------------------------------
+    # Sharpe (robust)
     strategy_sharpe = sharpe_from_finals(
         final_portfolio, initial_outlay, years, rf_rate
     )
@@ -300,7 +303,6 @@ if run_button:
             label=f"Risk free {rf_rate*100:.1f}% p.a.",
             linestyle=":",
         )
-        # extra: show deposit-only point at t=0
         ax1.scatter(
             [0],
             [deposit_only],
