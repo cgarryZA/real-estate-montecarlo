@@ -52,35 +52,14 @@ def mc_invest_initial_outlay(
 # ------------------------------------------------------------
 # helper: Sharpe from final MC distribution (robust)
 # ------------------------------------------------------------
-def sharpe_from_finals(
-    final_values: np.ndarray,
-    initial: float,
-    years: int,
-    rf: float,
-) -> float:
-    """
-    final_values: (n_paths,) ending wealth
-    We drop non-positive endings (cannot take fractional power of negative)
-    Sharpe = (mean_cagr - rf) / std_cagr
-    """
-    ratios = final_values / float(initial)
-
-    # keep only positive endings
-    mask = ratios > 0.0
-    if mask.sum() < 2:
+def sharpe_from_finals(final_values, initial, years, rf):
+    ratios = np.maximum(final_values / initial, 1e-9)
+    log_returns = np.log(ratios) / years  # annualised log return
+    mean_ret = np.mean(log_returns)
+    std_ret = np.std(log_returns, ddof=1)
+    if std_ret <= 1e-12:
         return 0.0
-
-    ratios = ratios[mask]
-    cagr = ratios ** (1.0 / years) - 1.0  # safe now
-
-    mean_cagr = float(np.mean(cagr))
-    std_cagr = float(np.std(cagr, ddof=1))
-
-    # if no dispersion, Sharpe is 0
-    if std_cagr <= 1e-9:
-        return 0.0
-
-    return (mean_cagr - rf) / std_cagr
+    return (mean_ret - rf) / std_ret
 
 
 # =============== SIDEBAR =================
