@@ -356,7 +356,7 @@ if run_button:
         ax1.plot(
             t,
             strategy_mean_path,
-            label=f"Strategy mean (Sharpe {strategy_sharpe:.2f})",
+            label=f"Strategy mean (Sharpe {irr_sharpe:.2f})",
             linewidth=2,
         )
         ax1.plot(
