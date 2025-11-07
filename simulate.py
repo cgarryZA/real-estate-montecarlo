@@ -210,24 +210,22 @@ def run_mc(
 
 
 def run_mc_with_paths(
-    prop: PropertyParams,
-    mort: MortgageParams,
-    refi: RefiParams,
-    inv: InvestmentParams,
-    sim: SimulationParams,
-    acq: AcquisitionCosts = None,
-    sdlt: StampDutyParams = None,
-    corporate_tax_rate: float = 0.19,
+    prop,
+    mort,
+    refi,
+    inv,
+    sim,
+    acq=None,
+    sdlt=None,
+    corporate_tax_rate=0.19,
     seed: int = 123,
 ):
-    """
-    MC that also collects time series so we can average equity, investment and portfolio over time.
-    """
     rng = np.random.default_rng(seed)
     finals = []
     equity_paths = []
     inv_paths = []
     portfolio_paths = []
+    cash_paths = []          # <--- NEW
 
     for _ in range(sim.n_paths):
         res = simulate_path(
@@ -245,15 +243,18 @@ def run_mc_with_paths(
         equity_paths.append(res["equity_history"])
         inv_paths.append(res["inv_history"])
         portfolio_paths.append(res["portfolio_history"])
+        cash_paths.append(res["cash_history"])     # <--- NEW
 
     finals = np.array(finals)
     equity_paths = np.vstack(equity_paths)
     inv_paths = np.vstack(inv_paths)
     portfolio_paths = np.vstack(portfolio_paths)
+    cash_paths = np.vstack(cash_paths)             # <--- NEW
 
     return {
         "finals": finals,
         "equity_paths": equity_paths,
         "inv_paths": inv_paths,
         "portfolio_paths": portfolio_paths,
+        "cash_paths": cash_paths,
     }

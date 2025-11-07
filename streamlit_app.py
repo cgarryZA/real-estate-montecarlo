@@ -85,6 +85,28 @@ def sharpe_from_paths(paths, rf_annual, steps_per_year):
     rf_per_step = rf_annual / steps_per_year
     return (mean_r - rf_per_step) / std_r * np.sqrt(steps_per_year)
 
+def irr_from_cashflows(cashflows, guess=0.1, maxiter=100, tol=1e-6):
+    """
+    Compute IRR for equally spaced cashflows.
+    Returns rate per period (NOT annualised).
+    """
+    r = guess
+    for _ in range(maxiter):
+        # NPV and its derivative
+        t = np.arange(len(cashflows))
+        discount = (1 + r) ** t
+        npv = np.sum(cashflows / discount)
+        d_npv = np.sum(-t * cashflows / ((1 + r) ** (t + 1)))
+        if abs(d_npv) < 1e-12:
+            break
+        r_next = r - npv / d_npv
+        if abs(r_next - r) < tol:
+            r = r_next
+            break
+        r = r_next
+    return r
+
+
 # =============== SIDEBAR =================
 st.sidebar.header("Property & Rent")
 price = st.sidebar.number_input("Purchase price (£)", 50_000, 2_000_000, 295_000, 5_000)
@@ -223,6 +245,7 @@ if run_button:
     equity_paths = mc["equity_paths"]
     inv_paths = mc["inv_paths"]
     portfolio_paths = mc["portfolio_paths"]
+    cash_paths = mc["cash_paths"]
 
     # actual initial cash out (deposit + fees)
     initial_outlay = compute_initial_outlay(prop, mort, acq, sdlt)
@@ -243,6 +266,40 @@ if run_button:
     n_steps = years * steps_per_year
     t = np.arange(n_steps) / steps_per_year
     strategy_mean_path = portfolio_paths.mean(axis=0)
+
+    # ----- IRR per path -----
+    all_irrs_annual = []
+    for i in range(n_paths):
+        # cashflows are per step
+        step_cfs = cash_paths[i]  # shape (n_steps,)
+        # build full CF stream: buy at t0, earn cash each step, liquidate at end
+        full_cfs = np.concatenate((
+            np.array([-initial_outlay]),
+            step_cfs,
+            np.array([final_portfolio[i]]),
+        ))
+        irr_step = irr_from_cashflows(full_cfs, guess=0.01)
+        if np.isfinite(irr_step):
+            # annualise: (1+r_step)^(steps_per_year) - 1
+            irr_annual = (1 + irr_step) ** steps_per_year - 1
+            all_irrs_annual.append(irr_annual)
+
+    all_irrs_annual = np.array(all_irrs_annual)
+    valid_mask = np.isfinite(all_irrs_annual)
+    all_irrs_annual = all_irrs_annual[valid_mask]
+
+    if all_irrs_annual.size > 1:
+        irr_mean = all_irrs_annual.mean()
+        irr_std = all_irrs_annual.std(ddof=1)
+        if irr_std > 1e-12:
+            irr_sharpe = (irr_mean - rf_rate) / irr_std
+        else:
+            irr_sharpe = 0.0
+    else:
+        irr_mean = np.nan
+        irr_std = np.nan
+        irr_sharpe = 0.0
+
 
     # BENCHMARK MC: invest the initial outlay
     bench_paths, bench_mean_path = mc_invest_initial_outlay(
@@ -286,8 +343,8 @@ if run_button:
     m3.metric("Mean investment component", f"£{mean_invest:,.0f}")
     m4.metric("Initial outlay (with fees)", f"£{initial_outlay:,.0f}")
     m5.metric(
-        "Sharpe (strategy | benchmark)",
-        f"{strategy_sharpe:.2f} | {bench_sharpe:.2f}",
+        "IRR Sharpe (strategy)",
+        f"{irr_sharpe:.2f}"
     )
 
     # =============== LAYOUT FOR PLOTS ===============
