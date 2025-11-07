@@ -80,7 +80,7 @@ mort_rate = st.sidebar.slider("Mortgage rate (annual %)", 0.0, 0.1, 0.04, 0.001)
 term_years = st.sidebar.slider("Mortgage term (years)", 5, 40, 35, 1)
 
 st.sidebar.header("Refinance")
-max_ltv = st.sidebar.slider("Max LTV on refi", 0.5, 0.95, 0.75, 0.01)
+max_ltv = st.sidebar.slider("Max LTV on refi", 0.5, 0.95, 0.85, 0.01)
 refi_fee = st.sidebar.slider("Refi fee (% of new loan)", 0.0, 0.05, 0.02, 0.001)
 rate_spread = st.sidebar.slider(
     "Rate improvement on refi (abs %)", 0.0, 0.03, 0.005, 0.001
