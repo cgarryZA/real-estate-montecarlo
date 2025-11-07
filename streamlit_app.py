@@ -61,6 +61,29 @@ def sharpe_from_finals(final_values, initial, years, rf):
         return 0.0
     return (mean_ret - rf) / std_ret
 
+def sharpe_from_paths(paths, rf_annual, steps_per_year):
+    """
+    More stable Sharpe using all period returns across all MC paths.
+    paths: (n_paths, n_steps)
+    """
+    prev = paths[:, :-1]
+    curr = paths[:, 1:]
+
+    mask = prev > 0
+    period_returns = np.zeros_like(curr, dtype=float)
+    period_returns[mask] = curr[mask] / prev[mask] - 1.0
+
+    valid = period_returns[mask]
+    if valid.size == 0:
+        return 0.0
+
+    mean_r = valid.mean()
+    std_r = valid.std(ddof=1)
+    if std_r <= 1e-12:
+        return 0.0
+
+    rf_per_step = rf_annual / steps_per_year
+    return (mean_r - rf_per_step) / std_r * np.sqrt(steps_per_year)
 
 # =============== SIDEBAR =================
 st.sidebar.header("Property & Rent")
@@ -235,11 +258,18 @@ if run_button:
     risk_free_curve = initial_outlay * (1 + rf_rate) ** t
 
     # Sharpe (robust)
-    strategy_sharpe = sharpe_from_finals(
-        final_portfolio, initial_outlay, years, rf_rate
+    # strategy_sharpe = sharpe_from_finals(
+    #     final_portfolio, initial_outlay, years, rf_rate
+    # )
+    # bench_sharpe = sharpe_from_finals(
+    #     bench_paths[:, -1], initial_outlay, years, rf_rate
+    # )
+
+    strategy_sharpe = sharpe_from_paths(
+    portfolio_paths, rf_rate, steps_per_year
     )
-    bench_sharpe = sharpe_from_finals(
-        bench_paths[:, -1], initial_outlay, years, rf_rate
+    bench_sharpe = sharpe_from_paths(
+        bench_paths, rf_rate, steps_per_year
     )
 
     # top metrics
