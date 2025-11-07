@@ -107,7 +107,7 @@ solicitor_pct = st.sidebar.number_input(
 mortgage_fee_pct = st.sidebar.number_input(
     "Mortgage fee (% of loan)", 0.0, 0.02, 0.005, 0.0005
 )
-sdlt_surcharge = st.sidebar.number_input("SDLT surcharge", 0.0, 0.05, 0.03, 0.001)
+sdlt_surcharge = st.sidebar.number_input("SDLT surcharge", 0.0, 0.05, 0.05, 0.001)
 
 # tax
 st.sidebar.header("Tax")

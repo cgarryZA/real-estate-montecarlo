@@ -117,8 +117,6 @@ def simulate_path(
 
         # cash available after paying principal (principal is not deductible)
         net_cf = after_tax_profit - principal
-        if net_cf < 0:
-            net_cf = 0.0
 
         # evolve investment account with this cash
         z_inv = rng.normal()

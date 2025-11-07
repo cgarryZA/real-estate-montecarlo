@@ -48,14 +48,21 @@ class AcquisitionCosts:
 @dataclass
 class StampDutyParams:
     bands: List[Tuple[float, float, float]]
-    surcharge: float = 0.0
+    surcharge: float = 5.0
 
     def calculate(self, price: float) -> float:
+        """
+        Calculate UK-style tiered stamp duty.
+
+        For limited companies, the surcharge is added to each band rate.
+        For individuals (surcharge = 0), standard rates apply.
+        """
         tax = 0.0
         for low, high, rate in self.bands:
             if price > low:
-                taxable = min(price, high) - low if math.isfinite(high) else price - low
-                tax += taxable * rate
-            if self.surcharge > 0:
-                tax += price * self.surcharge
+                upper = price if not math.isfinite(high) else min(price, high)
+                taxable = max(0.0, upper - low)
+                # add surcharge to the rate itself, not total price
+                effective_rate = rate + self.surcharge
+                tax += taxable * effective_rate
         return tax
