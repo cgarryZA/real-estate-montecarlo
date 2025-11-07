@@ -265,9 +265,11 @@ if run_button:
     #     bench_paths[:, -1], initial_outlay, years, rf_rate
     # )
 
-    strategy_sharpe = sharpe_from_paths(
-    portfolio_paths, rf_rate, steps_per_year
+    strategy_sharpe = sharpe_from_finals(
+        final_portfolio, initial_outlay, years, rf_rate
     )
+
+    # Sharpe for pure investment benchmark: time-series is OK here
     bench_sharpe = sharpe_from_paths(
         bench_paths, rf_rate, steps_per_year
     )
